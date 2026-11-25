@@ -1,0 +1,64 @@
+# Publica o app de treinos em https://treinosgarmin.runwithgratitude.ca
+#
+# O app continua morando em LuizKatiu62/gastos-casa/treinos-v2: e la que
+# ficam as sincronizacoes (Garmin, Hevy, provas), os segredos e as
+# correcoes. Este repositorio so pega uma copia dessa pasta e publica no
+# endereco novo. Nada para manter aqui.
+#
+# Roda a cada 15 minutos; so publica quando a pasta treinos-v2 mudou.
+# Para publicar na hora: Actions > Publicar app de treinos > Run workflow.
+name: Publicar app de treinos
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://treinosgarmin.runwithgratitude.ca
+    steps:
+      - name: Copiar treinos-v2 do gastos-casa
+        id: copia
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/LuizKatiu62/gastos-casa origem
+          git -C origem sparse-checkout set treinos-v2
+          VERSAO=$(git -C origem rev-parse HEAD:treinos-v2)
+          NO_AR=$(curl -fsS --max-time 20 https://treinosgarmin.runwithgratitude.ca/origem.txt 2>/dev/null || true)
+          echo "pasta: $VERSAO / no ar: $NO_AR"
+          if [ "$VERSAO" = "$NO_AR" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "mudou=nao" >> "$GITHUB_OUTPUT"
+            echo "Nada novo: o endereco ja tem esta versao."
+            exit 0
+          fi
+          mkdir site
+          cp -r origem/treinos-v2/. site/
+          echo "$VERSAO" > site/origem.txt
+          echo "treinosgarmin.runwithgratitude.ca" > site/CNAME
+          echo "mudou=sim" >> "$GITHUB_OUTPUT"
+
+      - if: steps.copia.outputs.mudou == 'sim'
+        uses: actions/configure-pages@v5
+
+      - if: steps.copia.outputs.mudou == 'sim'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - if: steps.copia.outputs.mudou == 'sim'
+        id: deploy
+        uses: actions/deploy-pages@v4
